@@ -16,3 +16,7 @@ instructor-xl/tokenizer_config.json
 .vscode/launch.json
 worker.py
 d_tree.py
+*.pyc
+*.csv
+*.bak
+*.csv#
