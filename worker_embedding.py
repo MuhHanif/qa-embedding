@@ -77,6 +77,7 @@ class HelperFunction:
     def convert_pd_list_column_to_numpy_array():
         pass
 
+
 class TrafficControl:
     """
     limit queue traffic
@@ -114,7 +115,12 @@ class ModelWorker:
     init a model worker
     """
 
-    def __init__(self, model_path: str, csv_cache_dir:str = "embeddings_cache.csv", limit_worker_concurrency: int = 1):
+    def __init__(
+        self,
+        model_path: str,
+        csv_cache_dir: str = "embeddings_cache.csv",
+        limit_worker_concurrency: int = 1,
+    ):
         """
         Parameters:
         model_path (str): path/to/model/dir
@@ -127,8 +133,10 @@ class ModelWorker:
             print("loading csv from cache")
             self.df = self._load_cache()
         else:
-            print("no cache detected please load the cache manually or using API endpoint to create new one")
-            self.df = None 
+            print(
+                "no cache detected please load the cache manually or using API endpoint to create new one"
+            )
+            self.df = None
 
     def load_model(self, load_to: str = None) -> object:
         print(self)
@@ -147,7 +155,9 @@ class ModelWorker:
 
         return self.model.encode(nested_text_list)
 
-    def compute_cosine_sim(self, nested_text_list: List[List[str]], top_k:int = 5) -> np.array:
+    def compute_cosine_sim(
+        self, nested_text_list: List[List[str]], top_k: int = 5
+    ) -> np.array:
         """
         calculate how similar or related the question withe the cached answer. it will return probability for each answer.
         use top_k (default to 5) to retrieve high prob answer only or set it to -1 to get all of sample
@@ -156,34 +166,38 @@ class ModelWorker:
         # convert pandas column filled with 1d np.array to numpy 2d np.array
         answer_embedding = np.stack(self.df["embeddings"].to_list())
         # compute how close the question related to the answer
-        similarity_score = HelperFunction.cosine_similarity(question_embedding, answer_embedding)
+        similarity_score = HelperFunction.cosine_similarity(
+            question_embedding, answer_embedding
+        )
         # Get the indices that would sort the array in descending order
         sorted_indices_descending = np.argsort(-similarity_score)
-        # grab N highest value 
+        # grab N highest value
         # [:] all first dimension
-        # [:,:5] all first dimension and 5 second dimension 
-        top_k_index = sorted_indices_descending[:,:top_k]
+        # [:,:5] all first dimension and 5 second dimension
+        top_k_index = sorted_indices_descending[:, :top_k]
         return top_k_index
-    
+
     def compute_df_embeddings(self) -> None:
         """
         compute all embeddings inside dataframe
         """
-        list_prompt = [list(x) for x in zip(self.df["instructions"], self.df["prompts"])]
+        list_prompt = [
+            list(x) for x in zip(self.df["instructions"], self.df["prompts"])
+        ]
 
         embeddings = self.model.encode(list_prompt)
         # convert 2d np array to a list of 1d np.array
         list_of_embeddings = [x for x in embeddings]
-        self.df["embeddings"] = list_of_embeddings 
+        self.df["embeddings"] = list_of_embeddings
 
-    def create_dataframe_from_csv(self, csv:str) -> None:
+    def create_dataframe_from_csv(self, csv: str) -> None:
         """
         reads csv and create worker dataframe for further process
         """
         df = pd.read_csv(csv)
 
-        # check if all the necessary column exist 
-        if not all(col in df.columns for col in ["instructions","prompts"]):
+        # check if all the necessary column exist
+        if not all(col in df.columns for col in ["instructions", "prompts"]):
             raise Exception("instruction / prompt column not detected")
         self.df = df
 
@@ -195,11 +209,9 @@ class ModelWorker:
         HelperFunction.create_backup(self.csv_cache_dir)
 
         self.df.to_csv(self.csv_cache_dir)
-    
-    def _load_cache(self) -> pd.DataFrame:
 
+    def _load_cache(self) -> pd.DataFrame:
         return pd.read_csv(self.csv_cache_dir)
-    
 
 
 print()
@@ -240,7 +252,7 @@ async def api_get_embeddings(request: Request):
             "prompt": ["question 1", "question 2"],
             "instruction": "Compute embeddings for the given prompt."
         }
-        
+
     Response:
     --------
         Status: 200 OK
@@ -268,10 +280,9 @@ async def api_get_embeddings(request: Request):
     queue_line.release_worker_semaphore()
     return JSONResponse(content=embedding)
 
+
 @app.post("/create_cache_from_csv")
 async def upload_csv(file: UploadFile = File(...)):
-
-
     # Get the file contents
     contents = await file.read()
 
@@ -284,6 +295,7 @@ async def upload_csv(file: UploadFile = File(...)):
     worker.overwrite_latent_cache()
 
     return {"status": "embedding stored in cache"}
+
 
 @app.post("/calculate_close_match_index")
 async def calculate_top_k(request: Request):
@@ -321,7 +333,7 @@ async def calculate_top_k(request: Request):
             "prompt": ["question 1", "question 2"],
             "instruction": "Compute embeddings for the given prompt."
         }
-        
+
     Response:
     --------
         Status: 200 OK
@@ -348,6 +360,7 @@ async def calculate_top_k(request: Request):
     embedding = HelperFunction.numpy_array_to_list(embedding)
     queue_line.release_worker_semaphore()
     return JSONResponse(content=embedding)
+
 
 if __name__ == "__main__":
     worker = ModelWorker(model_path="instructor-xl")
