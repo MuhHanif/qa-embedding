@@ -20,3 +20,4 @@ d_tree.py
 *.csv
 *.bak
 *.csv#
+*.parquet

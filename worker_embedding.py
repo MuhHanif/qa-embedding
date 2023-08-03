@@ -9,6 +9,7 @@ import shutil
 import os
 from datetime import datetime
 import io
+import ast
 
 import asyncio
 from queue import Queue
@@ -118,7 +119,7 @@ class ModelWorker:
     def __init__(
         self,
         model_path: str,
-        csv_cache_dir: str = "embeddings_cache.csv",
+        csv_cache_dir: str = "embeddings_cache.parquet",
         limit_worker_concurrency: int = 1,
     ):
         """
@@ -156,7 +157,7 @@ class ModelWorker:
         return self.model.encode(nested_text_list)
 
     def compute_cosine_sim(
-        self, nested_text_list: List[List[str]], top_k: int = 5
+        self, nested_text_list: List[List[str]], top_k: int = 5, min_prob: float = 0.60
     ) -> np.array:
         """
         calculate how similar or related the question withe the cached answer. it will return probability for each answer.
@@ -175,7 +176,25 @@ class ModelWorker:
         # [:] all first dimension
         # [:,:5] all first dimension and 5 second dimension
         top_k_index = sorted_indices_descending[:, :top_k]
-        return top_k_index
+
+        # top closest answer in the dataframe
+
+        top_list = []
+
+        for count, top_answer_index in enumerate(top_k_index):
+            # copy so it wont mess the original df
+            top_answer_df = self.df.prompts.iloc[top_answer_index].copy()
+            top_answer_df = pd.DataFrame(top_answer_df)
+            top_answer_df = top_answer_df.rename(columns={"prompts": "answer"})
+            # store score prob alongside the answer
+            top_answer_df["score"] = similarity_score[count, top_answer_index]
+            # drop the answer that has low probability
+            top_answer_df = top_answer_df[top_answer_df["score"] >= min_prob]
+            # convert to dict so it's usable as json output
+            top_answer_dict = top_answer_df.to_dict(orient="records")
+
+            top_list.append(top_answer_dict)
+        return top_list
 
     def compute_df_embeddings(self) -> None:
         """
@@ -207,11 +226,15 @@ class ModelWorker:
         """
         # backup cache file
         HelperFunction.create_backup(self.csv_cache_dir)
-
-        self.df.to_csv(self.csv_cache_dir)
+        cache = self.df.copy()
+        # cache["embeddings"] = cache["embeddings"].apply(lambda x: x.tolist())
+        cache.to_parquet(self.csv_cache_dir)
+        del cache
 
     def _load_cache(self) -> pd.DataFrame:
-        return pd.read_csv(self.csv_cache_dir)
+        df = pd.read_parquet(self.csv_cache_dir)
+        # df["embeddings"] = df["embeddings"].apply(lambda x: np.array(ast.literal_eval(x)))
+        return df
 
 
 print()
@@ -356,10 +379,10 @@ async def calculate_top_k(request: Request):
     params = await request.json()
     await queue_line.acquire_worker_semaphore()
     params = HelperFunction.unpack_instruction(params)
-    embedding = worker.compute_cosine_sim(params)
-    embedding = HelperFunction.numpy_array_to_list(embedding)
+    answer = worker.compute_cosine_sim(params)
+    # embedding = HelperFunction.numpy_array_to_list(embedding)
     queue_line.release_worker_semaphore()
-    return JSONResponse(content=embedding)
+    return JSONResponse(content=answer)
 
 
 if __name__ == "__main__":
