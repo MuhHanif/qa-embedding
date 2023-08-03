@@ -338,7 +338,8 @@ async def calculate_top_k(request: Request):
         }
     - 'prompt' (list of strings): The list of strings representing the prompt for which embeddings need to be computed.
     - 'instruction' (string): An instruction string that may be used to guide the worker's behavior while computing the embeddings.
-    - 'top_k' (int): n number of closest match ordered by the most likely answer to least likely answer.
+    - 'top_k' (int: optional default to 5): n number of closest match ordered by the most likely answer to least likely answer.
+    - 'min_prob' (float: optional default to 0.68): probability threshold where the answer is correct.
     Returns:
     --------
     JSONResponse
@@ -353,8 +354,10 @@ async def calculate_top_k(request: Request):
         Content-Type: application/json
 
         {
-            "prompt": ["question 1", "question 2"],
+            "prompt": ["question 1", "question 2", "question 3"],
             "instruction": "Compute embeddings for the given prompt."
+            "min_prob": 0.65
+            "top_k": 5
         }
 
     Response:
@@ -363,23 +366,36 @@ async def calculate_top_k(request: Request):
         Content-Type: application/json
         [
             [
-               5,
-               2,
-               45,
-                ...
+                {
+                "answer": "some answer 1",
+                "score": 0.675431489944458
+                }
             ],
             [
-                6,
-                20,
-                0,
-                ...
+                {
+                "answer": "some answer 2",
+                "score": 0.6822136640548706
+                }
+            ],
+            [], # no answer because prob is too low
+            [
+                {
+                "answer": "some answer 3",
+                "score": 0.7514620423316956
+                },
+                {
+                "answer": "some answer 4",
+                "score": 0.750185489654541
+                }
             ]
         ]
     """
     params = await request.json()
     await queue_line.acquire_worker_semaphore()
+    top_k = params.get('top_k', 5)
+    min_prob = params.get('min_prob', 0.68)
     params = HelperFunction.unpack_instruction(params)
-    answer = worker.compute_cosine_sim(params)
+    answer = worker.compute_cosine_sim(params, top_k=top_k, min_prob=min_prob)
     # embedding = HelperFunction.numpy_array_to_list(embedding)
     queue_line.release_worker_semaphore()
     return JSONResponse(content=answer)
